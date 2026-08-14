@@ -1,0 +1,13 @@
+from fastapi import FastAPI
+
+from app.routers import purchase, seats
+
+app = FastAPI(title="Event Service")
+
+app.include_router(seats.router)
+app.include_router(purchase.router)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}

@@ -15,6 +15,7 @@ Owns Postgres. See [event-service/requirements.txt](event-service/requirements.t
 | psycopg2-binary | 2.9.12 | Sync Postgres driver, used by Alembic only (migrations run synchronously) |
 | alembic | 1.19.1 | Database migrations |
 | pydantic-settings | 2.15.0 | Loads config (e.g. `DATABASE_URL`) from env vars / `.env` |
+| httpx | 0.28.1 | Async HTTP client used to call the Lock Service (`/lock`, `/unlock`) |
 
 ## lock-service
 
