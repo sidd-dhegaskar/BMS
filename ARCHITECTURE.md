@@ -133,7 +133,7 @@ sequenceDiagram
             E->>P: UPDATE bookings SET status='failed'
         end
         E->>L: POST /unlock (seat_id, user_id)
-        L->>R: DEL ticket:{id}
+        L->>R: compare-and-delete ticket:{id} (Lua: DEL only if value == user_id)
         E-->>C: result
     else lock rejected (already held)
         R-->>L: nil
@@ -145,6 +145,7 @@ sequenceDiagram
 Key points:
 - The Redis lock is released **either way** — success or OCC failure — so a failed purchase never leaves a seat stuck for the full TTL.
 - `bookings` row is written only after the lock is acquired, never on lock rejection.
+- Unlock is a **compare-and-delete**, not a plain `DEL`: if this lock's TTL already expired and a different user has since acquired it, a stale `/unlock` call from the original request must not delete the new holder's active lock. The Lua script only deletes the key if its value still matches the caller's `user_id`; otherwise it's a no-op. This doesn't change the double-sell guarantee (Postgres OCC already provides that) — it only prevents a late unlock from prematurely evicting someone else's in-flight lock.
 
 ---
 
@@ -158,16 +159,17 @@ v0 reads Postgres only — no Redis merge yet (that's deferred to v1). Response 
 
 **In scope:**
 - Two services, REST/HTTP between them.
-- Single-seat locking (`SET NX EX`, no Lua).
+- Single-seat locking (`SET NX EX` to acquire).
+- Compare-and-delete on unlock (small Lua script — only deletes the lock if its value still matches the caller's `user_id`; see below).
 - Postgres OCC on `tickets.version`.
 - `bookings` as a pending/confirmed/failed attempt log.
 - Docker Compose for local Postgres + Redis.
 
 **Explicitly deferred (v1+):**
 - Redis merged into `GET /seats` for real-time seat availability.
-- Multi-seat all-or-nothing Lua locking script.
+- Multi-seat all-or-nothing Lua locking script (compare-and-delete on unlock is the only Lua in v0; multi-seat locking is still deferred).
 - gRPC replacing HTTP/JSON between services.
-- Fencing tokens / handling the case where a lock's TTL expires mid-checkout (currently a known gap — see the concurrency table above; Postgres OCC is the backstop but the UX of "who actually wins" in that exact race isn't fully designed yet).
+- Full fencing tokens (compare-and-delete on unlock closes the "stale unlock deletes someone else's lock" race, but a monotonic fencing token is a more general mechanism still deferred to v1).
 - Load testing (k6/Locust) for the thundering-herd scenario.
 
 ---
